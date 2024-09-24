@@ -121,6 +121,62 @@ class AutomatedTradingBot {
 		}
 	}
 
+	private async OpenSelectPairSection() {
+		// First click on the forex section to enter into it
+		await this.browser.waitForSelector('a[role="button"] p[data-asset-type="forex"]');
+		await this.browser.click('a[role="button"] p[data-asset-type="forex"]');
+		this.addLog('Clicked on the forex section');
+	}
+
+	private async selectOrderType(orderType: "LIMIT" | "MARKET"): Promise<void> {
+		this.addLog(`Order Type select to: ${orderType}`);
+		await this.browser.waitForSelector('select#ember5498-type',{ visible: true });
+
+		await this.browser.evaluate((orderType) => {
+			const selectElement = document.querySelector('select#ember5498-type') as HTMLSelectElement;
+			selectElement.value = orderType === "MARKET" ? 'ExecuteAndEliminate' : 'GoodTillCancelled';
+			selectElement.dispatchEvent(new Event('change'));
+		},orderType);
+		this.addLog(`Selected order type: ${orderType}`);
+	}
+	private async openSelectPairForTrade(pair: string,tradeType: "BUY" | "SELL" = "BUY",timeRage: string = "2pm-4pm"): Promise<void> {
+		// Click on the select pair dropdown
+		await this.browser.waitForSelector('.card .expiry-list_market .cell');
+		const pairs = await this.browser.$$('.card .expiry-list_market .cell');
+		for (const p of pairs) {
+			const text = await p.evaluate(el => el.textContent?.trim());
+			if (text === pair) {
+				await p.click();
+				this.addLog(`Selected pair: ${pair}`);
+				break;
+			}
+		}
+
+		// Select the time range
+		await this.browser.waitForSelector('.accordion-header .cell');
+		const timeRanges = await this.browser.$$('.accordion-header .cell');
+		for (const t of timeRanges) {
+			const text = await t.evaluate(el => el.textContent?.trim());
+			if (text === timeRage) {
+				await t.click();
+				this.addLog(`Selected time range: ${timeRage}`);
+				break;
+			}
+		}
+
+		// Click on the middle market list item
+		await this.browser.waitForSelector('.market-list_content .market-list_item');
+		const marketItems = await this.browser.$$('.market-list_content .market-list_item');
+		const middleIndex = Math.floor(marketItems.length / 2);
+		await marketItems[middleIndex].click();
+		this.addLog('Clicked on the middle market list item');
+
+		// Click on the trade type button
+		const tradeTypeSelector = tradeType === "BUY" ? '.price-button--buy' : '.price-button--sell';
+		await this.browser.waitForSelector(tradeTypeSelector);
+		await this.browser.click(tradeTypeSelector);
+		this.addLog(`Clicked on the ${tradeType} button`);
+	}
 	public async start(): Promise<void> {
 		try {
 			const browser = await puppeteer.launch({ headless: false });
@@ -132,6 +188,9 @@ class AutomatedTradingBot {
 			this.login(page);
 			const balance = await this.getAccountBalance();
 			console.log(`Account balance: ${balance}`);
+			await this.OpenSelectPairSection();
+			await this.openSelectPairForTrade("'AUD/JPY","SELL")
+			await this.selectOrderType("LIMIT")
 		} catch (err) {
 			this.addLog(`Error: ${err.message}`);
 		}
