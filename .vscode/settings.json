@@ -1,0 +1,8 @@
+{
+  "editor.suggest.snippetsPreventQuickSuggestions": false,
+  "aiXcoder.showTrayIcon": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": ["source.fixAll.format", "source.fixAll.eslint"],
+  "editor.tabSize": 2,
+  "cSpell.words": ["Parens", "plusplus"]
+}

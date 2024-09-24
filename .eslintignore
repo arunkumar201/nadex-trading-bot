@@ -1,0 +1,7 @@
+
+dist/*
+build/*
+**/*.d.ts
+/src/types/ 
+node_modules
+**/**/node_modules
