@@ -5,6 +5,8 @@ interface Alert {
 	symbol: string;
 	action: 'buy' | 'sell';
 }
+const VIEWPORT = { width: 1920,height: 1080 };
+
 
 class AutomatedTradingBot {
 	private isRunning: boolean = false;
@@ -12,7 +14,7 @@ class AutomatedTradingBot {
 	private isUserLogin: boolean = false;
 	private browser: Page;
 	private userName = process.env.NADEX_USER_NAME;
-	private password= process.env.NADEX_PASSWORD;
+	private password = process.env.NADEX_PASSWORD;
 
 	private addLog(message: string): void {
 		this.logs.push(message);
@@ -61,7 +63,12 @@ class AutomatedTradingBot {
 		this.addLog(`Received MT4 alert: ${alert.action} ${alert.symbol}`);
 
 		try {
-			const browser = await puppeteer.launch({ headless: false }); // Set to false for debugging
+			const browser = await puppeteer.launch({
+				headless: true,
+				executablePath: './chromium/chrome.exe',
+				args: ["--ash-host-window-bounds=1920x1080","--window-size=1920,1048","--window-position=0,0"],
+			},
+			);
 			const page = await browser.newPage();
 			await this.login(page);
 			// Find and click the "buy" or "sell" button
@@ -128,21 +135,92 @@ class AutomatedTradingBot {
 		this.addLog('Clicked on the forex section');
 	}
 
-	private async selectOrderType(orderType: "LIMIT" | "MARKET"): Promise<void> {
-		this.addLog(`Order Type select to: ${orderType}`);
-		await this.browser.waitForSelector('select#ember5498-type',{ visible: true });
 
-		await this.browser.evaluate((orderType) => {
-			const selectElement = document.querySelector('select#ember5498-type') as HTMLSelectElement;
-			selectElement.value = orderType === "MARKET" ? 'ExecuteAndEliminate' : 'GoodTillCancelled';
-			selectElement.dispatchEvent(new Event('change'));
-		},orderType);
-		this.addLog(`Selected order type: ${orderType}`);
+	private async selectOrderType(orderType: "LIMIT" | "MARKET"): Promise<void> {
+		this.addLog(`Selecting Order Type: ${orderType}`);
+
+		// Use the label to find the associated select element
+		const labelSelector = 'label[for^="ember"][for$="-type"]';  // Matches 'emberxxxx-type'
+		const selectSelector = 'select.ticket_type-select';
+
+		try {
+			// Wait for the label to be visible first
+			await this.browser.waitForSelector(labelSelector,{ visible: true });
+
+			// Wait for the select element using the select's class
+			await this.browser.waitForSelector(selectSelector,{ visible: true });
+
+			// Log the available options for debugging
+			const options = await this.browser.$$eval(`${selectSelector} option`,options => options.map(option => option.value));
+			this.addLog(`Available options: ${options.join(', ')}`);
+
+			// Select the appropriate option based on the orderType argument
+			const valueToSelect = orderType === "MARKET" ? 'ExecuteAndEliminate' : 'GoodTillCancelled';
+			await this.browser.select(selectSelector,valueToSelect);
+
+			this.addLog(`Successfully selected order type: ${orderType}`);
+		} catch (error) {
+			this.addLog(`Error while selecting order type: ${error.message}`);
+			throw error;
+		}
 	}
-	private async openSelectPairForTrade(pair: string,tradeType: "BUY" | "SELL" = "BUY",timeRage: string = "2pm-4pm"): Promise<void> {
-		// Click on the select pair dropdown
-		await this.browser.waitForSelector('.card .expiry-list_market .cell');
-		const pairs = await this.browser.$$('.card .expiry-list_market .cell');
+
+	async selectMiddleMarketTrade(tradeType: 'BUY' | 'SELL'): Promise<void> {
+		try {
+			// Wait for the market list items to be present
+			await this.browser.waitForSelector('.market-list_item');
+
+			// Use JavaScript to find the middle item and click the appropriate button
+			const clickResult = await this.browser.evaluate((type) => {
+				const items = document.querySelectorAll('.market-list_item');
+				if (items.length === 0) return 'No items found';
+
+				const middleIndex = Math.floor(items.length / 2);
+				const middleItem = items[middleIndex];
+
+				const buttonSelector = type === 'BUY' ? '.price-button--buy' : '.price-button--sell';
+				const button = middleItem.querySelector(buttonSelector);
+
+				if (!button) return `${type} button not found`;
+
+				// Check if the button is an HTMLElement before clicking
+				if (button instanceof HTMLElement) {
+					button.click();
+					return `Clicked ${type} button`;
+				} else {
+					return `${type} button is not clickable`;
+				}
+			},tradeType);
+
+			this.addLog(clickResult);
+
+			if (!clickResult.startsWith('Clicked')) {
+				throw new Error(clickResult);
+			}
+		} catch (error) {
+			this.addLog(`Error selecting middle market trade: ${error instanceof Error ? error.message : String(error)}`);
+			throw error;
+		}
+	}
+
+
+	private async openSelectPairForTrade(pair: string,tradeType: "BUY" | "SELL" = "BUY",selectedDuration: string = "5 minute"): Promise<void> {
+		// Click on the 5 minute option inside the by duration
+		await this.browser.waitForSelector('.card .card_header a[role="button"]');
+		const durationOptions = await this.browser.$$('.card .card_header a[role="button"]');
+		for (const option of durationOptions) {
+			const text = await option.evaluate(el => el.textContent?.trim());
+			if (text === selectedDuration) {
+				await option.click();
+				this.addLog(`Selected ${selectedDuration} duration`);
+				break;
+			}
+		}
+
+		// Then click on the select pair dropdown based on the input pair. 
+		await this.browser.waitForNetworkIdle();
+		await this.browser.waitForSelector('.market-list_group .market-list_heading .cell.market-list_duration');
+		const pairs = await this.browser.$$('.market-list_group .market-list_heading .cell.market-list_duration');
 		for (const p of pairs) {
 			const text = await p.evaluate(el => el.textContent?.trim());
 			if (text === pair) {
@@ -152,35 +230,95 @@ class AutomatedTradingBot {
 			}
 		}
 
-		// Select the time range
-		await this.browser.waitForSelector('.accordion-header .cell');
-		const timeRanges = await this.browser.$$('.accordion-header .cell');
-		for (const t of timeRanges) {
-			const text = await t.evaluate(el => el.textContent?.trim());
-			if (text === timeRage) {
-				await t.click();
-				this.addLog(`Selected time range: ${timeRage}`);
-				break;
-			}
-		}
+		// Wait for the market list items to be present
+		await this.selectMiddleMarketTrade(tradeType);
 
-		// Click on the middle market list item
-		await this.browser.waitForSelector('.market-list_content .market-list_item');
-		const marketItems = await this.browser.$$('.market-list_content .market-list_item');
-		const middleIndex = Math.floor(marketItems.length / 2);
-		await marketItems[middleIndex].click();
-		this.addLog('Clicked on the middle market list item');
-
-		// Click on the trade type button
-		const tradeTypeSelector = tradeType === "BUY" ? '.price-button--buy' : '.price-button--sell';
-		await this.browser.waitForSelector(tradeTypeSelector);
-		await this.browser.click(tradeTypeSelector);
-		this.addLog(`Clicked on the ${tradeType} button`);
 	}
+
+
+	private async setContractPriceAndSize(price: number,size: number) {
+		this.addLog(`Setting contract price to ${price} and size to ${size}`);
+
+		// Selectors for price and size inputs using more generic attributes
+		const priceInputSelector = 'input[name="price"]';
+		const sizeInputSelector = 'input[name="size"]';
+
+		// Wait for the price input to be visible
+		await this.browser.waitForSelector(priceInputSelector,{ visible: true });
+		await this.browser.focus(priceInputSelector);
+		await this.browser.click(priceInputSelector,{ clickCount: 3 });
+		await this.browser.type(priceInputSelector,price.toString());
+
+		// Trigger necessary events after entering the price
+		await this.browser.evaluate((selector) => {
+			const input = document.querySelector(selector) as HTMLInputElement;
+			input.dispatchEvent(new Event('input',{ bubbles: true }));
+			input.dispatchEvent(new Event('change',{ bubbles: true }));
+			input.dispatchEvent(new Event('blur',{ bubbles: true }));
+		},priceInputSelector);
+
+		this.addLog(`Set price to ${price}`);
+
+		// Wait for the size input to be visible
+		await this.browser.waitForSelector(sizeInputSelector,{ visible: true });
+		await this.browser.focus(sizeInputSelector);
+		await this.browser.click(sizeInputSelector,{ clickCount: 3 });
+		await this.browser.type(sizeInputSelector,size.toString());
+
+		// Trigger necessary events after entering the size
+		await this.browser.evaluate((selector) => {
+			const input = document.querySelector(selector) as HTMLInputElement;
+			input.dispatchEvent(new Event('input',{ bubbles: true }));
+			input.dispatchEvent(new Event('change',{ bubbles: true }));
+			input.dispatchEvent(new Event('blur',{ bubbles: true }));
+		},sizeInputSelector);
+
+		this.addLog(`Set size to ${size}`);
+	}
+
+
+	private async placeOrder() {
+		try {
+			// Wait for the "Place order" button to be enabled and visible
+			await this.browser.waitForFunction(() => {
+				const button = document.querySelector('button.btn.btn--primary[type="submit"]') as HTMLButtonElement;
+				return button && !button.disabled;
+			},{ timeout: 5000 });
+
+			// Click the "Place order" button natively
+			const button = await this.browser.$('button.btn.btn--primary[type="submit"]');
+			if (button) {
+				const boundingBox = await button.boundingBox();
+				if (boundingBox) {
+					await this.browser.mouse.click(
+						boundingBox.x + boundingBox.width / 2,
+						boundingBox.y + boundingBox.height / 2,
+						{ delay: 100 } // Add a slight delay to mimic human interaction
+					);
+					this.addLog('Clicked "Place order" button');
+				} else {
+					throw new Error('Button bounding box not found');
+				}
+			} else {
+				throw new Error('Button not found');
+			}
+		} catch (error) {
+			this.addLog(`Error placing order: ${error.message}`);
+			throw error;
+		}
+	}
+
 	public async start(): Promise<void> {
 		try {
-			const browser = await puppeteer.launch({ headless: false });
+			const browser = await puppeteer.launch({
+				headless: false,
+				defaultViewport: null,
+
+				args: ['--start-fullscreen','--window-size=1920,1040'],
+			},
+			);
 			const page = await browser.newPage();
+			// await page.setViewport(VIEWPORT);
 			this.browser = page;
 			this.isRunning = true;
 			this.isUserLogin = true;
@@ -189,8 +327,11 @@ class AutomatedTradingBot {
 			const balance = await this.getAccountBalance();
 			console.log(`Account balance: ${balance}`);
 			await this.OpenSelectPairSection();
-			await this.openSelectPairForTrade("'AUD/JPY","SELL")
+			await this.openSelectPairForTrade("EUR/USD","BUY")
 			await this.selectOrderType("LIMIT")
+			await this.setContractPriceAndSize(2,3);
+			await this.placeOrder();
+
 		} catch (err) {
 			this.addLog(`Error: ${err.message}`);
 		}
