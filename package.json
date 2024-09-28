@@ -11,7 +11,7 @@
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "prepare": "husky install",
-    "start:nadex":"npx tsx --no-warnings --env-file=.env scripts/nadex.ts "
+    "start:nadex":"npx tsx --no-warnings --env-file=.env src/process/nadex-binary/worker.ts"
   },
   "husky": {
     "hooks": {

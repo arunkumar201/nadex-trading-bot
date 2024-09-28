@@ -7,11 +7,24 @@ interface Alert {
 }
 const VIEWPORT = { width: 1920,height: 1080 };
 
+enum orderType {
+	LIMIT = "LIMIT",
+	MARKET = "MARKET"
+}
+export interface IJobData {
+	orderType: orderType;
+	orderAction: "BUY" | "SELL";
+	pair: string;
+	contractPrice: number;
+	contractSize: number;
+	selectedDuration: string;
+}
 
 class AutomatedTradingBot {
 	private isRunning: boolean = false;
 	private logs: string[] = [];
 	private isUserLogin: boolean = false;
+	//@ts-expect-error
 	private browser: Page;
 	private userName = process.env.NADEX_USER_NAME;
 	private password = process.env.NADEX_PASSWORD;
@@ -87,7 +100,7 @@ class AutomatedTradingBot {
 			await browser.close();
 			this.addLog('Order placed successfully');
 		} catch (error) {
-			this.addLog(`Error: ${error.message}`);
+			this.addLog(`Error: ${error}`);
 		}
 	}
 
@@ -123,7 +136,7 @@ class AutomatedTradingBot {
 			this.addLog(`Parsed balance:$${balance}`);
 			return balance;
 		} catch (error) {
-			this.addLog(`Error fetching account balance: ${error.message}`);
+			this.addLog(`Error fetching account balance: ${error}`);
 			throw error;
 		}
 	}
@@ -160,7 +173,7 @@ class AutomatedTradingBot {
 
 			this.addLog(`Successfully selected order type: ${orderType}`);
 		} catch (error) {
-			this.addLog(`Error while selecting order type: ${error.message}`);
+			this.addLog(`Error while selecting order type: ${error}`);
 			throw error;
 		}
 	}
@@ -303,7 +316,7 @@ class AutomatedTradingBot {
 				throw new Error('Button not found');
 			}
 		} catch (error) {
-			this.addLog(`Error placing order: ${error.message}`);
+			this.addLog(`Error placing order: ${error}`);
 			throw error;
 		}
 	}
@@ -320,21 +333,23 @@ class AutomatedTradingBot {
 			const page = await browser.newPage();
 			// await page.setViewport(VIEWPORT);
 			this.browser = page;
-			this.isRunning = true;
+			await this.login(page);
 			this.isUserLogin = true;
 			this.addLog('Bot started');
 			this.login(page);
 			const balance = await this.getAccountBalance();
 			console.log(`Account balance: ${balance}`);
-			await this.OpenSelectPairSection();
-			await this.openSelectPairForTrade("EUR/USD","BUY")
-			await this.selectOrderType("LIMIT")
-			await this.setContractPriceAndSize(2,3);
-			await this.placeOrder();
+			this.isRunning = true;
+			// await this.OpenSelectPairSection();
+			// await this.openSelectPairForTrade("EUR/USD","BUY")
+			// await this.selectOrderType("LIMIT")
+			// await this.setContractPriceAndSize(2,3);
+			// await this.placeOrder();
 
 		} catch (err) {
-			this.addLog(`Error: ${err.message}`);
+			this.addLog(`Error: ${err}`);
 		}
+
 	}
 
 	public async stop() {
@@ -343,15 +358,32 @@ class AutomatedTradingBot {
 		this.addLog('Bot stopped');
 	}
 
+	public async processNadexBinaryOrder(orderData: IJobData) {
+		try {
+			if (!this.isRunning || !this.isUserLogin) {
+				return;
+			}
+
+			// If the order is valid and relevant, execute the trade
+			await this.openSelectPairForTrade(orderData.pair,orderData.orderAction)
+			await this.selectOrderType(orderData.orderType)
+			await this.setContractPriceAndSize(orderData.contractPrice,orderData.contractSize);
+			await this.placeOrder();
+
+			this.addLog(`Nadex binary order processed: ${JSON.stringify(orderData)}`);
+		}
+		catch (err) {
+			this.addLog(`Error processing Nadex binary order: ${err}`);
+		}
+	}
+
 	public getLogs(): string[] {
 		return this.logs;
 	}
 }
 
 // Usage
-const bot = new AutomatedTradingBot();
-bot.start();
-
+export const nadexBot = new AutomatedTradingBot();
 // To stop the bot after 5 minutes
 // setTimeout(() => {
 // 	bot.stop();
