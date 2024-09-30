@@ -53,6 +53,7 @@ export const handleBinaryTrading = async (req: Request,res: Response) => {
 
 	const jobData = {
 		orderType: tradingData.orderType,
+		orderAction: tradingData.orderAction,
 		pair: tradingData?.symbol.toUpperCase(),
 		contractPrice: defaultNadexTrade.contractPrice ?? 10,
 		contractSize: defaultNadexTrade.contractSize ?? 3,

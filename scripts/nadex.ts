@@ -7,7 +7,7 @@ interface Alert {
 }
 const VIEWPORT = { width: 1920,height: 1080 };
 
-enum orderType {
+export enum orderType {
 	LIMIT = "LIMIT",
 	MARKET = "MARKET"
 }
@@ -34,7 +34,7 @@ class AutomatedTradingBot {
 		console.log(message);
 	}
 
-	private async login(page: Page): Promise<void> {
+	private async login_demo(page: Page): Promise<void> {
 		const userName = this.userName;
 		const password = this.password;
 		console.log(`userName : ${userName} password : ${password}`);
@@ -72,57 +72,72 @@ class AutomatedTradingBot {
 		this.browser = page;
 	}
 
-	private async handleMT4Alert(alert: Alert): Promise<void> {
-		this.addLog(`Received MT4 alert: ${alert.action} ${alert.symbol}`);
 
-		try {
-			const browser = await puppeteer.launch({
-				headless: true,
-				executablePath: './chromium/chrome.exe',
-				args: ["--ash-host-window-bounds=1920x1080","--window-size=1920,1048","--window-position=0,0"],
-			},
-			);
-			const page = await browser.newPage();
-			await this.login(page);
-			// Find and click the "buy" or "sell" button
-			// You'll need to update these selectors based on the actual Nadex trading interface
-			const buttonSelector = `button[data-testid="${alert.action}-button"]`;
-			await page.waitForSelector(buttonSelector);
-			await page.click(buttonSelector);
-			this.addLog(`Clicked ${alert.action} button`);
 
-			// Find and click the "place order" button
-			const placeOrderSelector = 'button[data-testid="place-order-button"]';
-			await page.waitForSelector(placeOrderSelector);
-			await page.click(placeOrderSelector);
-			this.addLog('Clicked place order button');
 
-			await browser.close();
-			this.addLog('Order placed successfully');
-		} catch (error) {
-			this.addLog(`Error: ${error}`);
+
+	private async login_live(page: Page): Promise<void> {
+		const userName = this.userName;
+		const password = this.password;
+		console.log(`userName : ${userName} password : ${password}`);
+
+		await page.goto('https://platform.nadex.com/npwa/#/login');
+		this.addLog('Navigated to Nadex login page');
+
+		// Get the current number of pages
+		const pagesBeforeClick = await page.evaluate(() => window.opener ? 1 : 0);
+
+		// Click the LOGIN button
+		await page.waitForSelector('button[type="submit"]');
+		await page.click('button.btn.login_submit');
+		this.addLog('Clicked LOGIN button');
+
+		// Wait for the new page to open
+		let newPage: Page | undefined;
+		while (!newPage) {
+			await page.waitForNetworkIdle(); // Wait for 1 second
+			const pages = await page.browser().pages();
+			if (pages.length > pagesBeforeClick + 1) {
+				newPage = pages[pages.length - 1];
+			}
 		}
+		await newPage.waitForNavigation();
+		this.addLog('New login page opened');
+
+		// Wait for the login form to appear on the new page
+		await newPage.waitForSelector('input#username');
+		await newPage.waitForSelector('input#password');
+
+		// Enter username and password
+		await newPage.type('input#username',userName!);
+		this.addLog('Entered username');
+
+		await newPage.type('input#password',password!);
+		this.addLog('Entered password');
+
+		// Click the submit button on the new login form
+		await newPage.waitForSelector('button[type="submit"]');
+		await newPage.click('button[type="submit"]');
+		this.addLog('Clicked submit button on new login form');
+
+		// Wait for the login process to complete
+		await newPage.waitForNavigation({ waitUntil: 'networkidle0' });
+		this.addLog('Logged in successfully');
+
+		this.isUserLogin = true;
+		this.browser = newPage;
 	}
 
-	private simulateMT4Alerts(): void {
-		const symbols = ['EUR/USD','GBP/USD','USD/JPY'];
-		const actions: ('buy' | 'sell')[] = ['buy','sell'];
 
-		// setInterval(() => {
-		if (!this.isRunning) return;
 
-		const alert: Alert = {
-			symbol: symbols[Math.floor(Math.random() * symbols.length)],
-			action: actions[Math.floor(Math.random() * actions.length)],
-		};
-		this.handleMT4Alert(alert);
-		// },5000);
-	}
+
+
+
 	private async getAccountBalance(): Promise<number> {
 		try {
 			console.log(`user is Login : ${this.isUserLogin} ands browser : ${!!this.browser} `)
 			if (!this.isUserLogin || !this.browser) {
-				this.start();
+				throw new Error("Error while fetching account balance");
 			}
 			// Wait for the balance element to be visible
 			await this.browser.waitForSelector('h2.balance_value');
@@ -333,10 +348,15 @@ class AutomatedTradingBot {
 			const page = await browser.newPage();
 			// await page.setViewport(VIEWPORT);
 			this.browser = page;
-			await this.login(page);
+			const isDemoMode = process.env.DEMO_MODE;
+			console.log(`Nadex Bot is running in ${isDemoMode ? 'DEMO MODE' : 'LIVE MODE'}`);
+			if (isDemoMode) {
+				await this.login_demo(page);
+			} else {
+				await this.login_live(page); 
+			}
 			this.isUserLogin = true;
 			this.addLog('Bot started');
-			this.login(page);
 			const balance = await this.getAccountBalance();
 			console.log(`Account balance: ${balance}`);
 			this.isRunning = true;
@@ -358,17 +378,29 @@ class AutomatedTradingBot {
 		this.addLog('Bot stopped');
 	}
 
+	private async backToBinaryOption() {
+		try {
+			this.addLog('Back to Binary Options section clicking on back btn');
+			await this.browser.waitForSelector('a.page_back.market-list_back',{ visible: true });
+			await this.browser.click('a.page_back.market-list_back');
+			this.addLog('Clicked "Back to Binary Options" button');
+		} catch (error) {
+			this.addLog(`Error going back to Binary Options page: ${error}`);
+		}
+	}
 	public async processNadexBinaryOrder(orderData: IJobData) {
 		try {
 			if (!this.isRunning || !this.isUserLogin) {
-				return;
+				throw new Error("please start the bot first");
 			}
 
 			// If the order is valid and relevant, execute the trade
+			console.log(`Order Action - ${orderData.orderAction} on ${orderData.pair} at ${orderData.contractPrice} with ${orderData.contractSize} contracts`)
 			await this.openSelectPairForTrade(orderData.pair,orderData.orderAction)
 			await this.selectOrderType(orderData.orderType)
 			await this.setContractPriceAndSize(orderData.contractPrice,orderData.contractSize);
 			await this.placeOrder();
+			await this.backToBinaryOption();
 
 			this.addLog(`Nadex binary order processed: ${JSON.stringify(orderData)}`);
 		}
