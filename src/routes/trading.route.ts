@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { handleBinaryTrading,INadexTrade } from "../controllers/trading.controller";
 import express,{ NextFunction,Request,Response } from "express";
 

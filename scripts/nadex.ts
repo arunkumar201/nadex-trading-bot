@@ -1,11 +1,12 @@
-import puppeteer,{ Puppeteer } from 'puppeteer';
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+import puppeteer from 'puppeteer';
 import { Page } from 'puppeteer';
 
-interface Alert {
+export interface Alert {
 	symbol: string;
 	action: 'buy' | 'sell';
 }
-const VIEWPORT = { width: 1920,height: 1080 };
+export const VIEWPORT = { width: 1920,height: 1080 };
 
 export enum orderType {
 	LIMIT = "LIMIT",

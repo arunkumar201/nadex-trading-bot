@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { Request,Response } from "express";
 import { ConnectionOptions,Queue } from "bullmq";
 import { ENVConfig } from "../config/env.config";

@@ -54,7 +54,7 @@ app.use("/nadex",AutoTradingRoute)
 
 app.use(defaultErrorHandler)
 
-const server = app.listen(PORT,() => {
+app.listen(PORT,() => {
 	console.log(`Bot server is server is running on port ${PORT}`);
 	console.log(`http://localhost:${PORT}`);
 	console.log(`http://localhost:${PORT}/server-status`);
