@@ -1,8 +1,10 @@
+import dotenv from "dotenv";
+dotenv.config({ path: "../../.env" });
 import { Worker } from "bullmq";
 import { processOrderOnNadex } from "./processOrder";
-import dotenv from "dotenv";
-dotenv.config();
+
 import { nadexBot } from "../../../scripts/nadex"
+import redis  from "ioredis";
 
 const REDIS_CONNECTION_OPTION = {
 	port: parseInt(process.env.REDIS_PORT!),
@@ -10,6 +12,13 @@ const REDIS_CONNECTION_OPTION = {
 	username: "default",
 	password: process.env.REDIS_PASSWORD!,
 };
+//create the redis client 
+export const redisClient = new redis({
+	port: parseInt(process.env.REDIS_PORT!),
+	host: process.env.REDIS_HOST!,
+	username: "default",
+	password: process.env.REDIS_PASSWORD!,
+});
 
 export const startProcesingOrderSingle = async () => {
 	new Worker(`nadex-com-binary-queue`,processOrderOnNadex,{

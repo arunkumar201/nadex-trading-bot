@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+import { redisClient } from '@/process/nadex-binary/worker';
 import puppeteer from 'puppeteer';
 import { Page } from 'puppeteer';
-
 export interface Alert {
 	symbol: string;
 	action: 'buy' | 'sell';
@@ -20,7 +20,6 @@ export interface IJobData {
 	contractSize: number;
 	selectedDuration: string;
 }
-
 class AutomatedTradingBot {
 	private isRunning: boolean = false;
 	private logs: string[] = [];
@@ -130,32 +129,52 @@ class AutomatedTradingBot {
 	}
 
 
+private async getAccountBalance(): Promise<number> {
+    try {
+        console.log(`user is Login : ${this.isUserLogin} and browser : ${!!this.browser} `);
+        if (!this.isUserLogin || !this.browser) {
+            throw new Error("Error while fetching account balance");
+        }
 
+        // Wait for the balance element to be visible
+        await this.browser.waitForSelector('h2.balance_value', { visible: true });
 
+        // Function to get the current balance
+        const getCurrentBalance = async () => {
+            const balanceText = await this.browser.$eval('h2.balance_value', el => (el.textContent && el.textContent.trim()) ?? "0");
+            return parseFloat(balanceText.replace(/[^0-9.-]+/g, ""));
+        };
 
+        // Get initial balance
+        const previousBalance = await getCurrentBalance();
+        let currentBalance = previousBalance;
+        let attempts = 0;
+        const maxAttempts = 10; // Adjust as needed
+        const delay = 500; // 500ms delay between checks
 
-	private async getAccountBalance(): Promise<number> {
-		try {
-			console.log(`user is Login : ${this.isUserLogin} ands browser : ${!!this.browser} `)
-			if (!this.isUserLogin || !this.browser) {
-				throw new Error("Error while fetching account balance");
-			}
-			// Wait for the balance element to be visible
-			await this.browser.waitForSelector('h2.balance_value');
+        // Keep checking for changes
+        while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            currentBalance = await getCurrentBalance();
 
-			// Extract the balance value
-			const balanceText = await this.browser.$eval('h2.balance_value',el => (el.textContent && el.textContent.trim()) ?? "0");
-			this.addLog(`Fetched balance text: ${balanceText}`);
+            if (currentBalance !== previousBalance) {
+                // Balance has changed, return the new value
+                this.addLog(`Updated balance detected: $${currentBalance}`);
+                return currentBalance;
+            }
 
-			// Convert the balance text to a number
-			const balance = parseFloat(balanceText.replace(/[^0-9.-]+/g,""));
-			this.addLog(`Parsed balance:$${balance}`);
-			return balance;
-		} catch (error) {
-			this.addLog(`Error fetching account balance: ${error}`);
-			throw error;
-		}
-	}
+            attempts++;
+        }
+
+        // If no change detected after max attempts, return the last known balance
+        this.addLog(`No balance update detected. Returning current balance: $${currentBalance}`);
+        return currentBalance;
+
+    } catch (error) {
+        this.addLog(`Error fetching account balance: ${error}`);
+        throw error;
+    }
+}
 
 	private async OpenSelectPairSection() {
 		// First click on the forex section to enter into it
@@ -233,36 +252,42 @@ class AutomatedTradingBot {
 	}
 
 
-	private async openSelectPairForTrade(pair: string,tradeType: "BUY" | "SELL" = "BUY",selectedDuration: string = "5 minute"): Promise<void> {
-		// Click on the 5 minute option inside the by duration
-		await this.browser.waitForSelector('.card .card_header a[role="button"]');
-		const durationOptions = await this.browser.$$('.card .card_header a[role="button"]');
-		for (const option of durationOptions) {
-			const text = await option.evaluate(el => el.textContent?.trim());
-			if (text === selectedDuration) {
-				await option.click();
-				this.addLog(`Selected ${selectedDuration} duration`);
-				break;
-			}
-		}
+	private async openSelectPairForTrade(pair: string, tradeType: "BUY" | "SELL" = "BUY", selectedDuration: string = "5 minute"): Promise<void> {
+    try {
+        // Click on the 5 minute option inside the by duration
+        await this.browser.waitForSelector('.card .card_header a[role="button"]', { timeout: 5000 });
+        const durationOptions = await this.browser.$$('.card .card_header a[role="button"]');
+        for (const option of durationOptions) {
+            const text = await option.evaluate(el => el.textContent?.trim());
+            if (text === selectedDuration) {
+                await option.click();
+                this.addLog(`Selected ${selectedDuration} duration`);
+                break;
+            }
+        }
 
-		// Then click on the select pair dropdown based on the input pair. 
-		await this.browser.waitForNetworkIdle();
-		await this.browser.waitForSelector('.market-list_group .market-list_heading .cell.market-list_duration');
-		const pairs = await this.browser.$$('.market-list_group .market-list_heading .cell.market-list_duration');
-		for (const p of pairs) {
-			const text = await p.evaluate(el => el.textContent?.trim());
-			if (text === pair) {
-				await p.click();
-				this.addLog(`Selected pair: ${pair}`);
-				break;
-			}
-		}
+        // Ensure the page is fully loaded
+        await this.browser.waitForNetworkIdle({ timeout: 5000 });
 
-		// Wait for the market list items to be present
-		await this.selectMiddleMarketTrade(tradeType);
+        // Wait for the select pair dropdown based on the input pair
+        await this.browser.waitForSelector('.market-list_group .market-list_heading .cell.market-list_duration', { visible: true, timeout: 10000 });
+        const pairs = await this.browser.$$('.market-list_group .market-list_heading .cell.market-list_duration');
+        for (const p of pairs) {
+            const text = await p.evaluate(el => el.textContent?.trim());
+            if (text === pair) {
+                await p.click();
+                this.addLog(`Selected pair: ${pair}`);
+                break;
+            }
+        }
 
-	}
+        // Wait for the market list items to be present
+        await this.selectMiddleMarketTrade(tradeType);
+    } catch (error) {
+        this.addLog(`Error in openSelectPairForTrade: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+    }
+}
 
 
 	private async setContractPriceAndSize(price: number,size: number) {
@@ -358,8 +383,14 @@ class AutomatedTradingBot {
 			}
 			this.isUserLogin = true;
 			this.addLog('Bot started');
-			const balance = await this.getAccountBalance();
-			console.log(`Account balance: ${balance}`);
+
+			this.getAccountBalance().then(async (balance) => {
+				await redisClient.set(`nadex-account-balance`,JSON.stringify(balance));
+				console.log(`Account balance: ${balance}`);
+			}).catch((err) => {
+				this.addLog(`Error setting account balance in Redis: ${err}`);
+				console.log(` Error setting account balance in Redis: ${err}`)
+			});
 			this.isRunning = true;
 			// await this.OpenSelectPairSection();
 			// await this.openSelectPairForTrade("EUR/USD","BUY")
@@ -401,13 +432,25 @@ class AutomatedTradingBot {
 			await this.selectOrderType(orderData.orderType)
 			await this.setContractPriceAndSize(orderData.contractPrice,orderData.contractSize);
 			await this.placeOrder();
-			await this.backToBinaryOption();
-
+			
+			await this.backToBinaryOption();	
+			this.updateAccoutBalance()
 			this.addLog(`Nadex binary order processed: ${JSON.stringify(orderData)}`);
 		}
 		catch (err) {
 			this.addLog(`Error processing Nadex binary order: ${err}`);
 		}
+	}
+
+	private updateAccoutBalance() {
+	
+		this.getAccountBalance().then(async (balance) => {
+      await redisClient.set(`nadex-account-balance`,JSON.stringify(balance));
+      console.log(`Account balance updated: ${balance}`);
+    }).catch((err) => {
+      this.addLog(`Error updating account balance in Redis: ${err}`);
+      console.log(`Error updating account balance in Redis: ${err}`)
+    });
 	}
 
 	public getLogs(): string[] {

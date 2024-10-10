@@ -36,6 +36,7 @@ export type TNadexBinaryTrade = z.infer<typeof ZNadexBinaryTrade>;
 
 export const handleBinaryTrading = async (req: Request,res: Response) => {
 	const bodyData = req.body;
+	console.log("bodyData",bodyData)
 	//@ts-expect-error
 	const defaultNadexTrade = (req.nadexTrade) as INadexTrade;
 	console.log(`default nadex trade settings : ${JSON.stringify(defaultNadexTrade)}`)
