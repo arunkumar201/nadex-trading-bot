@@ -11,13 +11,18 @@
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "prepare": "husky install",
-    "start:nadex": "npx tsx --no-warnings --env-file=.env src/process/nadex-binary/worker.ts"
+    "start:nadex": "npx tsx --no-warnings --env-file=.env src/process/nadex-binary/worker.ts",
+    "start:dashboard": "pnpm --filter nadex-bot-dashboard run build && pnpm --filter nadex-bot-dashboard run start"
   },
   "husky": {
     "hooks": {
       "pre-commit": "yarn lint:fix"
     }
   },
+"workspaces": [
+  "nadex-bot-dashboard",
+  "nadex-bot"
+],
   "lint-staged": {
     "**/*": "prettier --write --ignore-unknown"
   },
