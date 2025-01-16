@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon --ext ts",
     "build": "tsc -p .",
-    "start:prod": "yarn build && node dist/index.js",
+    "start:prod": "pnpm run build && node dist/src/index.js",
     "format": "prettier --write src",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
@@ -16,19 +16,19 @@
   },
   "husky": {
     "hooks": {
-      "pre-commit": "yarn lint:fix"
+      "pre-commit": "pnpm lint:fix"
     }
   },
-"workspaces": [
-  "nadex-bot-dashboard",
-  "nadex-bot"
-],
+  "workspaces": [
+    "nadex-bot-dashboard",
+    "nadex-bot"
+  ],
   "lint-staged": {
     "**/*": "prettier --write --ignore-unknown"
   },
   "engines": {
     "node": ">=18",
-    "yarn": "3.4.1"
+    "pnpm": ">=8.10.0"
   },
   "keywords": [],
   "author": "",
@@ -36,6 +36,7 @@
   "devDependencies": {
     "@commitlint/cli": "^19.4.0",
     "@commitlint/config-conventional": "^19.2.2",
+    "@types/body-parser": "^1.19.5",
     "@types/compression": "^1.7.3",
     "@types/cookie-parser": "^1.4.4",
     "@types/cors": "^2.8.14",
@@ -88,5 +89,5 @@
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
   },
-  "packageManager": "yarn@4.4.1"
+  "packageManager": "pnpm@8.10.0"
 }
